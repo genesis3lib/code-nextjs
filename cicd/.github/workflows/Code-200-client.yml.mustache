@@ -1,0 +1,185 @@
+name: Code-200-Client
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  checks: write
+  id-token: write
+
+env:
+  TF_VERSION: "1.12.2"
+  AWS_REGION: {{region}}
+
+jobs:
+  client-operations:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Version of AWS CLI
+        run: |
+          echo "AWS CLI version:"
+          which aws
+          aws --version
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Env setup
+        run: |
+
+          # Set environment variables
+          echo "BRANCH={{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" >> $GITHUB_ENV
+          if [[ "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" = "main" || "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" = "production" || "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" = "prod" ]]; then
+            echo "ENVIRONMENT=prod" >> $GITHUB_ENV
+          else
+            BRANCH_ENV=$(echo "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" | sed "s/\\//-/g")
+            echo "ENVIRONMENT=$BRANCH_ENV" >> $GITHUB_ENV
+          fi
+
+          echo "✅ Environment setup completed: {{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}"
+
+      - name: Credential for AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::{{{githubVarsOpen}}} vars.AWS_ACCOUNT_ID {{{githubVarsClose}}}:role/{{projectName}}-{{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}}-ops-deploy-s3-role
+          aws-region: {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}}
+
+      - name: Setup Environment Info
+        run: |
+          echo "Event name: {{{githubVarsOpen}}} github.event_name  {{{githubVarsClose}}}"
+          echo "Branch: {{{githubVarsOpen}}} env.BRANCH  {{{githubVarsClose}}}"
+          echo "Environment: {{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}}"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: {{{githubVarsOpen}}} env.TF_VERSION  {{{githubVarsClose}}}
+          terraform_wrapper: false
+
+      - name: Get Terraform Outputs
+        run: |
+          cd {{opsModule.moduleId}}/terraform
+          echo "🔍 Getting Terraform outputs for {{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}} environment..."
+
+          # Get AWS account ID for state bucket name
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          STATE_BUCKET="{{projectName}}-tfstate-${AWS_ACCOUNT_ID}"
+          echo "Using state bucket: ${STATE_BUCKET}"
+
+          # Initialize Terraform to access state
+          terraform init -backend-config=backend-${ENVIRONMENT}.hcl -backend-config="bucket=${STATE_BUCKET}" -input=false
+
+          # Get the S3 bucket and CloudFront distribution from Terraform outputs
+          S3_BUCKET=$(terraform output -raw s3_bucket_name 2>/dev/null || echo "")
+          CF_DISTRIBUTION=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo "")
+
+          if [ -z "$S3_BUCKET" ]; then
+            echo "❌ Could not get S3 bucket from Terraform outputs"
+            echo "🔍 Available Terraform outputs:"
+            terraform output
+            echo "⚠️ Infrastructure may not be deployed yet - run deploy_apply first"
+            exit 1
+          fi
+
+          if [ -z "$CF_DISTRIBUTION" ]; then
+            echo "❌ Could not get CloudFront distribution from Terraform outputs"
+            echo "🔍 Available Terraform outputs:"
+            terraform output
+            echo "⚠️ Infrastructure may not be deployed yet - run deploy_apply first"
+            exit 1
+          fi
+
+          echo "✅ Found S3 bucket: $S3_BUCKET"
+          echo "✅ Found CloudFront distribution: $CF_DISTRIBUTION"
+          echo "AWS_S3_TARGET=$S3_BUCKET" >> $GITHUB_ENV
+          echo "CLOUDFRONT_TARGET=$CF_DISTRIBUTION" >> $GITHUB_ENV
+
+          echo "Target S3: $S3_BUCKET"
+          echo "Target CloudFront: $CF_DISTRIBUTION"
+        env:
+          AWS_DEFAULT_REGION: {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Add build info
+        run: |
+          echo "export const version = {" > {{frontendModule.moduleId}}/src/utils/version.ts
+          echo "  build: '{{{githubVarsOpen}}} github.run_number {{{githubVarsClose}}}'," >> {{frontendModule.moduleId}}/src/utils/version.ts
+          echo "  attempt: '{{{githubVarsOpen}}} github.run_attempt {{{githubVarsClose}}}'," >> {{frontendModule.moduleId}}/src/utils/version.ts
+          echo "  action: '{{{githubVarsOpen}}} github.action {{{githubVarsClose}}}'," >> {{frontendModule.moduleId}}/src/utils/version.ts
+          echo "  modifiedDate: '{{{githubVarsOpen}}} github.event.repository.updated_at {{{githubVarsClose}}}'," >> {{frontendModule.moduleId}}/src/utils/version.ts
+          echo "  sha: '$(cd {{frontendModule.moduleId}} && git rev-parse --short HEAD)'" >> {{frontendModule.moduleId}}/src/utils/version.ts
+          echo "};" >> {{frontendModule.moduleId}}/src/utils/version.ts
+
+      - name: Setup environment variables
+        run: |
+          cd {{frontendModule.moduleId}}
+          echo "📝 Checking environment file for {{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}} environment..."
+
+          # Next.js uses .env.local for local development
+          # For deployments, we use .env.{environment}
+          ENV_FILE=".env.{{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}}"
+          if [ -f "$ENV_FILE" ]; then
+            echo "✅ Found $ENV_FILE - will use for build"
+            # Copy to .env.local for Next.js to pick up
+            cp "$ENV_FILE" .env.local
+          else
+            echo "⚠️ Warning: $ENV_FILE not found, build will use .env.local only"
+          fi
+
+          # List env files for debugging
+          ls -la .env* || true
+
+      - name: Build
+        run: |
+          cd {{frontendModule.moduleId}}
+          ls -lart
+          pwd
+          node -v
+          npm -v
+          npm install
+          echo "🔨 Running build for {{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}} environment..."
+          npm run build
+
+      - name: Check and commit package-lock.json changes
+        run: |
+          cd {{frontendModule.moduleId}}
+
+          # Check if package-lock.json exists and has changes
+          if [ -f "package-lock.json" ]; then
+            # Check if there are any changes to package-lock.json
+            if git diff --quiet package-lock.json && git diff --cached --quiet package-lock.json; then
+              echo "✅ No changes to package-lock.json"
+            else
+              echo "🔄 package-lock.json was modified during build, committing changes..."
+
+              # Configure git for the action
+              git config --local user.email "action@github.com"
+              git config --local user.name "GitHub Action"
+
+              # Add and commit the package-lock.json
+              git add package-lock.json
+              git commit -m "🤖 updated package-lock.json from build process"
+
+              # Push the commit back to the repository
+              git push
+              echo "✅ package-lock.json committed and pushed successfully"
+            fi
+          else
+            echo "ℹ️ No package-lock.json found after build"
+          fi
+
+      - name: Deploy - Sync S3 Bucket
+        run: |
+          echo "Deploying to ${AWS_S3_TARGET} [${CLOUDFRONT_TARGET}]"
+          aws s3 sync {{frontendModule.moduleId}}/out "s3://${AWS_S3_TARGET}" --region {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}} --delete
+
+      - name: Deploy - Invalidate CloudFront cache
+        run: |
+          echo "Invalidating CloudFront distribution cache for ${CLOUDFRONT_TARGET}"
+          aws cloudfront create-invalidation --distribution-id "${CLOUDFRONT_TARGET}" --paths "/*"
+

@@ -1,0 +1,165 @@
+{
+  "version": "3.0.0",
+  "metadata": {
+    "id": "code-nextjs",
+    "name": "Next.js Frontend",
+    "kind": "code",
+    "layers": [
+      "frontend",
+      "cicd"
+    ],
+    "type": "nextjs",
+    "description": "Modern Next.js application with TypeScript and App Router",
+    "version": "1.0.0",
+    "author": "Genesis Team",
+    "tags": [
+      "nextjs",
+      "react",
+      "typescript",
+      "frontend"
+    ],
+    "providers": ["aws"]
+  },
+  "scaffoldConfigTemplate": [
+    {
+      "key": "nextjsVersion",
+      "label": "Next.js Version",
+      "type": "select",
+      "options": ["14", "15"],
+      "optionNotes": {
+        "14": { "notes": "Stable with App Router - broad compatibility" },
+        "15": { "notes": "Latest with React 19 support - recommended" }
+      },
+      "default": "15",
+      "required": true,
+      "description": "Next.js framework version",
+      "category": "build"
+    },
+    {
+      "key": "routerType",
+      "label": "Router Type",
+      "type": "select",
+      "options": ["app"],
+      "optionNotes": {
+        "app": { "notes": "App Router - modern, recommended" }
+      },
+      "default": "app",
+      "required": true,
+      "description": "Next.js router type",
+      "category": "build"
+    }
+  ],
+  "dependencies": {
+    "npm": {
+      "dependencies": {
+        "tailwindcss": "^4.1.17",
+        "lucide-react": "^0.554.0",
+        "tailwind-merge": "^3.4.0",
+        "class-variance-authority": "^0.7.0",
+        "clsx": "^2.1.1"
+      },
+      "devDependencies": {}
+    }
+  },
+  "runtimeConfigFiles": {
+    "default": "frontend/.env.local",
+    "env": "frontend/.env.{{env}}"
+  },
+  "runtimeConfigTemplate": [
+    {
+      "key": "NEXT_PUBLIC_APP_NAME",
+      "description": "Application name",
+      "example": "{{projectName}}",
+      "default": "runtime",
+      "required": true,
+      "secret": false,
+      "targets": [
+        "frontend"
+      ],
+      "commonForAllEnv": true
+    },
+    {
+      "key": "NEXT_PUBLIC_APP_HOST",
+      "description": "Frontend application URL",
+      "example": "https://{{projectName}}{{envSuffix}}.{{domain}}",
+      "default": "runtime",
+      "required": true,
+      "secret": false,
+      "targets": [
+        "frontend"
+      ],
+      "commonForAllEnv": false
+    },
+    {
+      "key": "NEXT_PUBLIC_API_BASE",
+      "description": "Backend API base URL",
+      "example": "https://{{projectName}}-api{{envSuffix}}.{{domain}}",
+      "default": "runtime",
+      "required": true,
+      "secret": false,
+      "targets": [
+        "frontend"
+      ],
+      "commonForAllEnv": false
+    }
+  ],
+  "generation": {
+    "files": {
+      "remove": [
+        "README.md"
+      ]
+    },
+    "layers": {
+      "frontend": {},
+      "cicd": {}
+    }
+  },
+  "transformations": {
+    "replacements": []
+  },
+  "gitIgnore": {
+    "nextjs": [
+      "# Next.js / Node.js",
+      "node_modules/",
+      ".next/",
+      "out/",
+      "*.local",
+      "",
+      "# Logs",
+      "logs",
+      "*.log",
+      "npm-debug.log*",
+      "yarn-debug.log*",
+      "yarn-error.log*",
+      "pnpm-debug.log*",
+      "",
+      "# Environment variables",
+      ".env.local",
+      ".env.development.local",
+      ".env.test.local",
+      ".env.production.local",
+      ".env.secrets.*",
+      "",
+      "# Editor files",
+      ".vscode/*",
+      "!.vscode/extensions.json",
+      ".idea",
+      "*.suo",
+      "*.ntvs*",
+      "*.njsproj",
+      "*.sln",
+      "*.sw?",
+      "",
+      "# OS files",
+      ".DS_Store",
+      "Thumbs.db",
+      "",
+      "# Vercel",
+      ".vercel",
+      "",
+      "# TypeScript",
+      "*.tsbuildinfo",
+      "next-env.d.ts"
+    ]
+  }
+}
