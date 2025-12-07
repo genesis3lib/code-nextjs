@@ -36,16 +36,17 @@
       "category": "build"
     },
     {
-      "key": "routerType",
-      "label": "Router Type",
+      "key": "renderingMode",
+      "label": "Rendering Mode",
       "type": "select",
-      "options": ["app"],
+      "options": ["static", "ssr"],
       "optionNotes": {
-        "app": { "notes": "App Router - modern, recommended" }
+        "static": { "notes": "Static export to S3/CloudFront - fastest, cheapest, no server" },
+        "ssr": { "notes": "Server-Side Rendering on EC2 - dynamic content, API routes, server actions" }
       },
-      "default": "app",
+      "default": "static",
       "required": true,
-      "description": "Next.js router type",
+      "description": "How Next.js renders and deploys your application",
       "category": "build"
     }
   ],

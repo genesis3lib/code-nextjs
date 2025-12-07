@@ -1,0 +1,33 @@
+[Unit]
+Description={{projectName}} Next.js SSR Application ({{frontendModule.moduleId}})
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/opt/{{frontendModule.moduleId}}
+ExecStart=/usr/bin/node .next/standalone/server.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier={{frontendModule.moduleId}}
+
+# Environment variables
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=0.0.0.0
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/{{frontendModule.moduleId}}
+
+# Resource limits
+MemoryMax=1G
+TasksMax=100
+
+[Install]
+WantedBy=multi-user.target

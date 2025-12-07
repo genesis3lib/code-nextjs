@@ -1,0 +1,80 @@
+#!/bin/bash
+set -e
+
+# Next.js SSR EC2 Setup Script
+# This script is run on first EC2 instance launch to set up Node.js and PM2
+
+APP_NAME="{{frontendModule.moduleId}}"
+APP_DIR="/opt/$APP_NAME"
+NODE_VERSION="22"
+
+echo "=== Setting up Next.js SSR for $APP_NAME ==="
+
+# Detect OS and install Node.js
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS=$ID
+else
+    OS=$(uname -s)
+fi
+
+echo "Detected OS: $OS"
+
+case $OS in
+    amzn|amazon)
+        echo "Installing Node.js on Amazon Linux..."
+        curl -fsSL https://rpm.nodesource.com/setup_${NODE_VERSION}.x | sudo bash -
+        sudo yum install -y nodejs
+        ;;
+    ubuntu|debian)
+        echo "Installing Node.js on Ubuntu/Debian..."
+        curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+        ;;
+    *)
+        echo "Unsupported OS: $OS"
+        exit 1
+        ;;
+esac
+
+# Verify Node.js installation
+echo "Node.js version: $(node -v)"
+echo "npm version: $(npm -v)"
+
+# Install PM2 globally
+echo "Installing PM2..."
+sudo npm install -g pm2
+
+# Create application directory
+echo "Creating application directory..."
+sudo mkdir -p $APP_DIR
+sudo chown $(whoami):$(whoami) $APP_DIR
+
+# Setup PM2 to start on boot
+echo "Configuring PM2 startup..."
+pm2 startup systemd -u $(whoami) --hp $HOME | tail -1 | sudo bash || true
+
+# Create PM2 ecosystem file for Next.js
+cat > $APP_DIR/ecosystem.config.js << 'ECOSYSTEM'
+module.exports = {
+  apps: [{
+    name: '{{frontendModule.moduleId}}',
+    script: '.next/standalone/server.js',
+    cwd: '/opt/{{frontendModule.moduleId}}',
+    instances: 'max',
+    exec_mode: 'cluster',
+    env: {
+      NODE_ENV: 'production',
+      PORT: 3000
+    },
+    env_production: {
+      NODE_ENV: 'production',
+      PORT: 3000
+    }
+  }]
+};
+ECOSYSTEM
+
+echo "=== Next.js SSR setup complete ==="
+echo "Application directory: $APP_DIR"
+echo "PM2 ecosystem file: $APP_DIR/ecosystem.config.js"

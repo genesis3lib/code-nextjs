@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Enable static export for S3/CloudFront deployment
+{{#isStaticMode}}
+  // Static export for S3/CloudFront deployment
   output: 'export',
 
   // Disable image optimization for static export
@@ -11,6 +12,21 @@ const nextConfig: NextConfig = {
 
   // Trailing slash for S3 compatibility
   trailingSlash: true,
+{{/isStaticMode}}
+{{#isSsrMode}}
+  // SSR mode - standalone output for EC2 deployment
+  output: 'standalone',
+
+  // Enable image optimization (requires server)
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**',
+      },
+    ],
+  },
+{{/isSsrMode}}
 };
 
 export default nextConfig;

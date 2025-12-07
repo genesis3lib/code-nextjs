@@ -70,6 +70,7 @@ jobs:
           # Initialize Terraform to access state
           terraform init -backend-config=backend-${ENVIRONMENT}.hcl -backend-config="bucket=${STATE_BUCKET}" -input=false
 
+{{#isStaticMode}}
           # Get the S3 bucket and CloudFront distribution from Terraform outputs
           S3_BUCKET=$(terraform output -raw s3_bucket_name 2>/dev/null || echo "")
           CF_DISTRIBUTION=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo "")
@@ -97,6 +98,22 @@ jobs:
 
           echo "Target S3: $S3_BUCKET"
           echo "Target CloudFront: $CF_DISTRIBUTION"
+{{/isStaticMode}}
+{{#isSsrMode}}
+          # Get deployment bucket and EC2 info from Terraform outputs
+          DEPLOYMENT_BUCKET=$(terraform output -raw deployment_bucket_name 2>/dev/null || echo "")
+
+          if [ -z "$DEPLOYMENT_BUCKET" ]; then
+            echo "❌ Could not get deployment bucket from Terraform outputs"
+            echo "🔍 Available Terraform outputs:"
+            terraform output
+            echo "⚠️ Infrastructure may not be deployed yet - run deploy_apply first"
+            exit 1
+          fi
+
+          echo "✅ Found deployment bucket: $DEPLOYMENT_BUCKET"
+          echo "DEPLOYMENT_BUCKET=$DEPLOYMENT_BUCKET" >> $GITHUB_ENV
+{{/isSsrMode}}
         env:
           AWS_DEFAULT_REGION: {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}}
 
@@ -173,6 +190,7 @@ jobs:
             echo "ℹ️ No package-lock.json found after build"
           fi
 
+{{#isStaticMode}}
       - name: Deploy - Sync S3 Bucket
         run: |
           echo "Deploying to ${AWS_S3_TARGET} [${CLOUDFRONT_TARGET}]"
@@ -182,4 +200,79 @@ jobs:
         run: |
           echo "Invalidating CloudFront distribution cache for ${CLOUDFRONT_TARGET}"
           aws cloudfront create-invalidation --distribution-id "${CLOUDFRONT_TARGET}" --paths "/*"
+{{/isStaticMode}}
+{{#isSsrMode}}
+      - name: Package application for SSR deployment
+        run: |
+          cd {{frontendModule.moduleId}}
+          echo "📦 Packaging Next.js SSR application..."
 
+          # Create deployment package with standalone output
+          tar -czf ../nextjs-app.tar.gz \
+            .next/standalone \
+            .next/static \
+            public \
+            package.json \
+            package-lock.json
+
+          echo "✅ Package created: nextjs-app.tar.gz"
+          ls -lh ../nextjs-app.tar.gz
+
+      - name: Upload to S3
+        run: |
+          echo "📤 Uploading package to S3..."
+          aws s3 cp nextjs-app.tar.gz "s3://${DEPLOYMENT_BUCKET}/{{frontendModule.moduleId}}/{{{githubVarsOpen}}} github.sha {{{githubVarsClose}}}.tar.gz"
+          echo "✅ Uploaded to s3://${DEPLOYMENT_BUCKET}/{{frontendModule.moduleId}}/{{{githubVarsOpen}}} github.sha {{{githubVarsClose}}}.tar.gz"
+
+      - name: Deploy to EC2 via SSM
+        run: |
+          echo "🚀 Deploying to EC2 instances..."
+
+          # Send deployment command to EC2 instances
+          COMMAND_ID=$(aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=tag:Application,Values={{projectName}}" "Key=tag:Environment,Values={{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}}" \
+            --parameters "commands=[
+              'set -e',
+              'APP_DIR=/opt/{{frontendModule.moduleId}}',
+              'echo \"📥 Downloading deployment package...\"',
+              'aws s3 cp s3://${DEPLOYMENT_BUCKET}/{{frontendModule.moduleId}}/{{{githubVarsOpen}}} github.sha {{{githubVarsClose}}}.tar.gz /tmp/nextjs-app.tar.gz',
+              'echo \"📦 Extracting package...\"',
+              'sudo rm -rf \$APP_DIR/.next \$APP_DIR/public',
+              'sudo tar -xzf /tmp/nextjs-app.tar.gz -C \$APP_DIR',
+              'echo \"📦 Installing production dependencies...\"',
+              'cd \$APP_DIR && npm ci --production',
+              'echo \"🔄 Restarting application...\"',
+              'pm2 restart {{frontendModule.moduleId}} || pm2 start .next/standalone/server.js --name {{frontendModule.moduleId}}',
+              'echo \"✅ Deployment complete!\"'
+            ]" \
+            --comment "Deploy Next.js SSR {{{githubVarsOpen}}} github.sha {{{githubVarsClose}}}" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "📋 SSM Command ID: $COMMAND_ID"
+
+          # Wait for command to complete
+          echo "⏳ Waiting for deployment to complete..."
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$(aws ec2 describe-instances \
+              --filters "Name=tag:Application,Values={{projectName}}" "Name=tag:Environment,Values={{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}}" "Name=instance-state-name,Values=running" \
+              --query "Reservations[0].Instances[0].InstanceId" \
+              --output text)" || true
+
+          # Check command status
+          STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query "Commands[0].Status" --output text)
+          if [ "$STATUS" = "Success" ]; then
+            echo "✅ Deployment successful!"
+          else
+            echo "❌ Deployment failed with status: $STATUS"
+            aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$(aws ec2 describe-instances \
+                --filters "Name=tag:Application,Values={{projectName}}" "Name=tag:Environment,Values={{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}}" "Name=instance-state-name,Values=running" \
+                --query "Reservations[0].Instances[0].InstanceId" \
+                --output text)" || true
+            exit 1
+          fi
+{{/isSsrMode}}
