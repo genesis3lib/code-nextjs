@@ -1,0 +1,17 @@
+{{#isSsrMode}}
+import { NextResponse } from 'next/server';
+import { version } from '@/utils/version';
+
+/**
+ * Health check endpoint for ALB/ELB health monitoring
+ * Path: /ssr/v1/health (using /ssr/* prefix to separate from /api/* backend routes)
+ * Returns 200 OK with app version and status
+ */
+export async function GET() {
+  return NextResponse.json({
+    status: 'healthy',
+    version: version,
+    timestamp: new Date().toISOString(),
+  });
+}
+{{/isSsrMode}}

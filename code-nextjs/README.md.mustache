@@ -1,0 +1,191 @@
+# {{projectName}} - Next.js Frontend
+
+Next.js application with TypeScript, Tailwind CSS, and shadcn/ui.
+
+## Rendering Mode
+
+{{#isSsrMode}}
+**Mode: Server-Side Rendering (SSR)**
+
+This application is configured for SSR deployment on EC2 with ALB load balancing.
+
+- Build output: `standalone` (optimized for server deployment)
+- Runtime: Node.js server
+- Deployment target: EC2 Auto Scaling Group
+{{/isSsrMode}}
+{{#isStaticMode}}
+**Mode: Static Export**
+
+This application is configured for static deployment to S3/CloudFront.
+
+- Build output: `export` (static HTML/CSS/JS files)
+- Runtime: None (static files served from CDN)
+- Deployment target: S3 bucket with CloudFront CDN
+{{/isStaticMode}}
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js LTS version (see `.nvmrc`)
+- npm (comes with Node.js)
+
+### Installation
+
+```bash
+# Install dependencies
+npm install
+```
+
+### Development
+
+```bash
+npm run dev
+```
+
+The application will be available at `http://localhost:3000`
+
+### Build
+
+{{#isSsrMode}}
+```bash
+# Build for SSR deployment (standalone output)
+npm run build
+```
+
+The production build creates a standalone server in `.next/standalone/`:
+- `.next/standalone/server.js` - Node.js server entry point
+- `.next/standalone/.next/` - Compiled application
+- `.next/static/` - Static assets (must be copied to standalone)
+
+**Running the standalone server locally:**
+
+```bash
+# After build, copy static assets
+cp -r .next/static .next/standalone/.next/static
+cp -r public .next/standalone/public
+
+# Run the server
+cd .next/standalone
+PORT=3000 node server.js
+```
+{{/isSsrMode}}
+{{#isStaticMode}}
+```bash
+# Build for static export
+npm run build
+```
+
+The production build will be created in the `out/` directory as static HTML/CSS/JS files.
+
+**Preview the static build locally:**
+
+```bash
+npx serve out
+```
+{{/isStaticMode}}
+
+## UI Components
+
+This project uses [shadcn/ui](https://ui.shadcn.com/) for UI components.
+
+### Adding Components
+
+```bash
+npx shadcn@latest add <component-name>
+```
+
+**Examples:**
+
+```bash
+# Add a button component
+npx shadcn@latest add button
+
+# Add multiple components at once
+npx shadcn@latest add button card dialog form input
+```
+
+### Available Components
+
+See the full list at: https://ui.shadcn.com/docs/components
+
+Popular components include:
+- `button` - Button component with variants
+- `card` - Card container component
+- `dialog` - Modal dialog component
+- `form` - Form components with validation
+- `input` - Input field component
+- `select` - Select dropdown component
+- `table` - Data table component
+- `toast` - Toast notification component
+
+## Tech Stack
+
+- **Next.js** {{nextjsVersion}}
+- **TypeScript** - Type-safe JavaScript
+- **Tailwind CSS** - Utility-first CSS framework
+- **shadcn/ui** - Re-usable component library
+- **Lucide React** - Icon library
+
+## Project Structure
+
+```
+src/
+├── app/            # Next.js App Router pages and layouts
+│   ├── layout.tsx  # Root layout
+│   └── page.tsx    # Home page
+{{#isSsrMode}}│   └── ssr/        # SSR-specific routes (using /ssr/* prefix for ALB routing)
+│       └── v1/
+│           └── health/  # Health check endpoint (/ssr/v1/health)
+{{/isSsrMode}}├── components/     # React components
+│   └── ui/         # shadcn/ui components
+├── lib/            # Utility functions
+└── utils/          # Helper utilities
+```
+
+## Environment Variables
+
+Environment variables are managed through `.env.local`:
+
+```bash
+NEXT_PUBLIC_APP_NAME={{projectName}}
+NEXT_PUBLIC_API_BASE=http://localhost:8080
+```
+
+All environment variables exposed to the browser must be prefixed with `NEXT_PUBLIC_`.
+
+{{#isSsrMode}}
+## SSR Deployment
+
+This application is deployed to EC2 instances behind an Application Load Balancer:
+
+1. **Build**: GitHub Actions builds the standalone output
+2. **Upload**: Build artifacts are uploaded to S3 (`modules/{{frontendModule.moduleId}}/app/`)
+3. **Deploy**: SSM triggers EC2 instances to download and restart the application
+4. **Health Check**: ALB monitors `/ssr/v1/health` endpoint on port 3000
+
+### EC2 Setup Files
+
+The `ec2-setup/` directory contains deployment scripts:
+- `init-nextjs.sh` - Initial EC2 setup (Node.js, PM2)
+- `nextjs.service` - systemd service configuration
+
+### Running on EC2
+
+The application runs via PM2 process manager:
+```bash
+pm2 start ecosystem.config.js
+```
+
+Or via systemd:
+```bash
+sudo systemctl start {{frontendModule.moduleId}}
+```
+{{/isSsrMode}}
+
+## Learn More
+
+- [Next.js Documentation](https://nextjs.org/docs)
+- [TypeScript Documentation](https://www.typescriptlang.org/)
+- [Tailwind CSS Documentation](https://tailwindcss.com/)
+- [shadcn/ui Documentation](https://ui.shadcn.com/)

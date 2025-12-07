@@ -221,8 +221,8 @@ jobs:
       - name: Upload to S3
         run: |
           echo "📤 Uploading package to S3..."
-          aws s3 cp nextjs-app.tar.gz "s3://${DEPLOYMENT_BUCKET}/{{frontendModule.moduleId}}/{{{githubVarsOpen}}} github.sha {{{githubVarsClose}}}.tar.gz"
-          echo "✅ Uploaded to s3://${DEPLOYMENT_BUCKET}/{{frontendModule.moduleId}}/{{{githubVarsOpen}}} github.sha {{{githubVarsClose}}}.tar.gz"
+          aws s3 cp nextjs-app.tar.gz "s3://${DEPLOYMENT_BUCKET}/modules/{{frontendModule.moduleId}}/app/{{{githubVarsOpen}}} github.sha {{{githubVarsClose}}}.tar.gz"
+          echo "✅ Uploaded to s3://${DEPLOYMENT_BUCKET}/modules/{{frontendModule.moduleId}}/app/{{{githubVarsOpen}}} github.sha {{{githubVarsClose}}}.tar.gz"
 
       - name: Deploy to EC2 via SSM
         run: |
@@ -231,12 +231,12 @@ jobs:
           # Send deployment command to EC2 instances
           COMMAND_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --targets "Key=tag:Application,Values={{projectName}}" "Key=tag:Environment,Values={{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}}" \
+            --targets "Key=tag:Application,Values={{projectName}}" "Key=tag:Module,Values={{frontendModule.moduleId}}" "Key=tag:Environment,Values={{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}}" \
             --parameters "commands=[
               'set -e',
               'APP_DIR=/opt/{{frontendModule.moduleId}}',
               'echo \"📥 Downloading deployment package...\"',
-              'aws s3 cp s3://${DEPLOYMENT_BUCKET}/{{frontendModule.moduleId}}/{{{githubVarsOpen}}} github.sha {{{githubVarsClose}}}.tar.gz /tmp/nextjs-app.tar.gz',
+              'aws s3 cp s3://${DEPLOYMENT_BUCKET}/modules/{{frontendModule.moduleId}}/app/{{{githubVarsOpen}}} github.sha {{{githubVarsClose}}}.tar.gz /tmp/nextjs-app.tar.gz',
               'echo \"📦 Extracting package...\"',
               'sudo rm -rf \$APP_DIR/.next \$APP_DIR/public',
               'sudo tar -xzf /tmp/nextjs-app.tar.gz -C \$APP_DIR',

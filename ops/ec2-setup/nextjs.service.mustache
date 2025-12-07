@@ -1,3 +1,4 @@
+{{#isSsrMode}}
 [Unit]
 Description={{projectName}} Next.js SSR Application ({{frontendModule.moduleId}})
 After=network.target
@@ -31,3 +32,4 @@ TasksMax=100
 
 [Install]
 WantedBy=multi-user.target
+{{/isSsrMode}}

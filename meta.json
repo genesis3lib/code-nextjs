@@ -6,7 +6,8 @@
     "kind": "code",
     "layers": [
       "frontend",
-      "cicd"
+      "cicd",
+      "ops"
     ],
     "type": "nextjs",
     "description": "Modern Next.js application with TypeScript and App Router",

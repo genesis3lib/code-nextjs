@@ -1,3 +1,4 @@
+{{#isSsrMode}}
 #!/bin/bash
 set -e
 
@@ -78,3 +79,4 @@ ECOSYSTEM
 echo "=== Next.js SSR setup complete ==="
 echo "Application directory: $APP_DIR"
 echo "PM2 ecosystem file: $APP_DIR/ecosystem.config.js"
+{{/isSsrMode}}
