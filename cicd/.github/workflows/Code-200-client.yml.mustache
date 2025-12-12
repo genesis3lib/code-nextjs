@@ -25,88 +25,54 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Env setup
-        run: |
+      - name: Setup Environment
+        uses: ./.github/actions/setup-environment
 
-          # Set environment variables
-          echo "BRANCH={{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" >> $GITHUB_ENV
-          if [[ "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" = "main" || "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" = "production" || "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" = "prod" ]]; then
-            echo "ENVIRONMENT=prod" >> $GITHUB_ENV
-          else
-            BRANCH_ENV=$(echo "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" | sed "s/\\//-/g")
-            echo "ENVIRONMENT=$BRANCH_ENV" >> $GITHUB_ENV
-          fi
-
-          echo "✅ Environment setup completed: {{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}"
-
-      - name: Credential for AWS
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials
+        uses: ./.github/actions/aws-credentials
         with:
-          role-to-assume: arn:aws:iam::{{{githubVarsOpen}}} vars.AWS_ACCOUNT_ID {{{githubVarsClose}}}:role/{{projectName}}-{{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}}-ops-deploy-s3-role
-          aws-region: {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}}
+          account-id: {{{githubVarsOpen}}} vars.AWS_ACCOUNT_ID {{{githubVarsClose}}}
+          role-name: {{projectName}}-{{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}}-ops-deploy-s3-role
 
-      - name: Setup Environment Info
+      - name: Display Environment Info
         run: |
           echo "Event name: {{{githubVarsOpen}}} github.event_name  {{{githubVarsClose}}}"
           echo "Branch: {{{githubVarsOpen}}} env.BRANCH  {{{githubVarsClose}}}"
           echo "Environment: {{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}}"
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: {{{githubVarsOpen}}} env.TF_VERSION  {{{githubVarsClose}}}
-          terraform_wrapper: false
-
       - name: Get Terraform Outputs
-        run: |
-          cd {{opsModule.moduleId}}/terraform
-          echo "🔍 Getting Terraform outputs for {{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}} environment..."
-
-          # Get AWS account ID for state bucket name
-          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          STATE_BUCKET="{{projectName}}-tfstate-${AWS_ACCOUNT_ID}"
-          echo "Using state bucket: ${STATE_BUCKET}"
-
-          # Initialize Terraform to access state
-          terraform init -backend-config=backend-${ENVIRONMENT}.hcl -backend-config="bucket=${STATE_BUCKET}" -input=false
+        id: tf-outputs
+        uses: ./.github/actions/terraform-outputs
+        with:
+          terraform-dir: {{opsModule.moduleId}}/terraform
+          environment: {{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}}
+          project-name: {{projectName}}
 
 {{#isStaticMode}}
-          # Get the S3 bucket and CloudFront distribution from Terraform outputs
-          S3_BUCKET=$(terraform output -raw s3_bucket_name 2>/dev/null || echo "")
-          CF_DISTRIBUTION=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo "")
-
-          if [ -z "$S3_BUCKET" ]; then
+      - name: Verify Terraform Outputs (Static Mode)
+        run: |
+          if [ -z "${AWS_S3_TARGET}" ]; then
             echo "❌ Could not get S3 bucket from Terraform outputs"
-            echo "🔍 Available Terraform outputs:"
-            terraform output
             echo "⚠️ Infrastructure may not be deployed yet - run deploy_apply first"
             exit 1
           fi
 
-          if [ -z "$CF_DISTRIBUTION" ]; then
+          if [ -z "${CLOUDFRONT_TARGET}" ]; then
             echo "❌ Could not get CloudFront distribution from Terraform outputs"
-            echo "🔍 Available Terraform outputs:"
-            terraform output
             echo "⚠️ Infrastructure may not be deployed yet - run deploy_apply first"
             exit 1
           fi
 
-          echo "✅ Found S3 bucket: $S3_BUCKET"
-          echo "✅ Found CloudFront distribution: $CF_DISTRIBUTION"
-          echo "AWS_S3_TARGET=$S3_BUCKET" >> $GITHUB_ENV
-          echo "CLOUDFRONT_TARGET=$CF_DISTRIBUTION" >> $GITHUB_ENV
-
-          echo "Target S3: $S3_BUCKET"
-          echo "Target CloudFront: $CF_DISTRIBUTION"
+          echo "✅ Found S3 bucket: ${AWS_S3_TARGET}"
+          echo "✅ Found CloudFront distribution: ${CLOUDFRONT_TARGET}"
 {{/isStaticMode}}
 {{#isSsrMode}}
-          # Get deployment bucket and EC2 info from Terraform outputs
-          DEPLOYMENT_BUCKET=$(terraform output -raw deployment_bucket_name 2>/dev/null || echo "")
+      - name: Verify Terraform Outputs (SSR Mode)
+        run: |
+          DEPLOYMENT_BUCKET="${OPS_BUCKET}"
 
           if [ -z "$DEPLOYMENT_BUCKET" ]; then
             echo "❌ Could not get deployment bucket from Terraform outputs"
-            echo "🔍 Available Terraform outputs:"
-            terraform output
             echo "⚠️ Infrastructure may not be deployed yet - run deploy_apply first"
             exit 1
           fi
@@ -114,23 +80,17 @@ jobs:
           echo "✅ Found deployment bucket: $DEPLOYMENT_BUCKET"
           echo "DEPLOYMENT_BUCKET=$DEPLOYMENT_BUCKET" >> $GITHUB_ENV
 {{/isSsrMode}}
-        env:
-          AWS_DEFAULT_REGION: {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Add build info
-        run: |
-          echo "export const version = {" > {{frontendModule.moduleId}}/src/utils/version.ts
-          echo "  build: '{{{githubVarsOpen}}} github.run_number {{{githubVarsClose}}}'," >> {{frontendModule.moduleId}}/src/utils/version.ts
-          echo "  attempt: '{{{githubVarsOpen}}} github.run_attempt {{{githubVarsClose}}}'," >> {{frontendModule.moduleId}}/src/utils/version.ts
-          echo "  action: '{{{githubVarsOpen}}} github.action {{{githubVarsClose}}}'," >> {{frontendModule.moduleId}}/src/utils/version.ts
-          echo "  modifiedDate: '{{{githubVarsOpen}}} github.event.repository.updated_at {{{githubVarsClose}}}'," >> {{frontendModule.moduleId}}/src/utils/version.ts
-          echo "  sha: '$(cd {{frontendModule.moduleId}} && git rev-parse --short HEAD)'" >> {{frontendModule.moduleId}}/src/utils/version.ts
-          echo "};" >> {{frontendModule.moduleId}}/src/utils/version.ts
+      - name: Create version file
+        uses: ./.github/actions/create-version-file
+        with:
+          output-path: src/utils/version.ts
+          module-id: {{frontendModule.moduleId}}
 
       - name: Setup environment variables
         run: |
