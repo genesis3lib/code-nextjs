@@ -168,6 +168,12 @@ start_frontend() {
 
     print_info "Starting Next.js development server on port $FRONTEND_PORT..."
 
+    # Copy .env.dev to .env.local if it exists (Next.js loads .env.local automatically)
+    if [ -f "$FRONTEND_DIR/.env.dev" ] && [ ! -f "$FRONTEND_DIR/.env.local" ]; then
+        cp "$FRONTEND_DIR/.env.dev" "$FRONTEND_DIR/.env.local"
+        print_info "Created .env.local from .env.dev"
+    fi
+
     (cd "$FRONTEND_DIR" && \
         nohup npm run dev > "$FRONTEND_LOG" 2>&1 &
         echo $! > "$FRONTEND_PID_FILE"
