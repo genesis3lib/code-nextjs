@@ -19,7 +19,7 @@
       "typescript",
       "frontend"
     ],
-    "providers": ["aws"]
+    "providers": ["aws", "ghpages"]
   },
   "scaffoldConfigTemplate": [
     {
